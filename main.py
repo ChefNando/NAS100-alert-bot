@@ -34,16 +34,16 @@ def send_discord_notification(message):
     data = {"content": message}
     try:
         res = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
-        print(f"[DISCORD] Status: {res.status_code}")
+        print(f"[DISCORD] Risposta server: {res.status_code}", flush=True)
     except Exception as e:
-        print(f"[DISCORD] Errore invio: {e}")
+        print(f"[DISCORD] Errore invio: {e}", flush=True)
 
 def fetch_nasdaq_data():
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=5d&interval=15m"
     try:
         res = requests.get(url, headers=HEADERS, timeout=10)
         if res.status_code != 200:
-            print(f"[DATA] Errore API Yahoo: Status {res.status_code}")
+            print(f"[DATA] Errore API Yahoo: Status {res.status_code}", flush=True)
             return None
 
         data = res.json()
@@ -61,13 +61,14 @@ def fetch_nasdaq_data():
 
         return df.dropna()
     except Exception as e:
-        print(f"[DATA] Eccezione download: {e}")
+        print(f"[DATA] Eccezione download: {e}", flush=True)
         return None
 
 def check_setup():
+    print("[CHECK] Avvio analisi candela...", flush=True)
     df = fetch_nasdaq_data()
     if df is None or len(df) < 200:
-        print("[CHECK] Dati storici insufficienti.")
+        print("[CHECK] Dati storici insufficienti.", flush=True)
         return
 
     # Calcolo Indicatori
@@ -92,6 +93,8 @@ def check_setup():
     clean_market = (candle['High'] - candle['Low']) <= (candle['ATR'] * 1.8)
     low_volume = candle['Volume'] <= (candle['AvgVolume'] * 1.1)
 
+    print(f"[CHECK] Analisi completata. Retest: {retest_ema}, Clean: {clean_market}, LowVol: {low_volume}", flush=True)
+
     if retest_ema and clean_market and low_volume:
         prezzo_chiusura = round(float(candle['Close']), 2)
         ema20_val = round(float(candle['EMA20']), 2)
@@ -104,14 +107,15 @@ def check_setup():
         send_discord_notification(msg)
 
 def bot_loop():
-    print("[BOT] Avvio sequenza e test notifica...")
+    time.sleep(2)  # Piccola pausa per stabilizzare l'avvio
+    print("[BOT] Invio messaggio di test a Discord...", flush=True)
     send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
 
     while True:
         try:
             check_setup()
         except Exception as e:
-            print(f"[LOOP] Errore: {e}")
+            print(f"[LOOP] Errore: {e}", flush=True)
         time.sleep(900)
 
 # Avvio server HTTP in background per Render
