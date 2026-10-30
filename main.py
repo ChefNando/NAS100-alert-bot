@@ -36,7 +36,7 @@ def send_discord_notification(message):
         res = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
         print(f"[DISCORD] Risposta server: {res.status_code}", flush=True)
         if res.status_code == 429:
-            retry_after = res.json().get('retry_after', 5)
+            retry_after = int(res.headers.get("Retry-After", 5))
             print(f"[DISCORD] Rate limit! Attendo {retry_after} secondi...", flush=True)
             time.sleep(retry_after)
             res_retry = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
@@ -73,8 +73,8 @@ def fetch_nasdaq_data():
 def check_setup():
     print("[CHECK] Avvio analisi candela...", flush=True)
     df = fetch_nasdaq_data()
-    if df is None or len(df) < 200:
-        print(f"[CHECK] Dati insufficienti scaricati ({len(df) if df is not None else 0} candele).", flush=True)
+    if df is None or len(df) < 50:
+        print(f"[CHECK] Dati insufficienti ({len(df) if df is not None else 0} candele).", flush=True)
         return
 
     # Calcolo Indicatori
@@ -99,7 +99,7 @@ def check_setup():
     clean_market = (candle['High'] - candle['Low']) <= (candle['ATR'] * 1.8)
     low_volume = candle['Volume'] <= (candle['AvgVolume'] * 1.1)
 
-    print(f"[CHECK] Analisi completata. Retest: {retest_ema}, Clean: {clean_market}, LowVol: {low_volume}", flush=True)
+    print(f"[CHECK] Analisi completata ({len(df)} candele). Retest: {retest_ema}, Clean: {clean_market}, LowVol: {low_volume}", flush=True)
 
     if retest_ema and clean_market and low_volume:
         prezzo_chiusura = round(float(candle['Close']), 2)
@@ -113,7 +113,7 @@ def check_setup():
         send_discord_notification(msg)
 
 def bot_loop():
-    time.sleep(5)  # Pausa di stabilizzazione per evitare rate limit all'avvio
+    time.sleep(5)
     print("[BOT] Invio messaggio di test a Discord...", flush=True)
     send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
 
