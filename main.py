@@ -7,7 +7,7 @@ import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565866666317844510/RpxQaUzwiaNcrtwx1FI_21ZtJsfKgsByM8E2h7dqBLf-miheLxOCRktE1Q7VxqeSUdiw"
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565871195251933274/KUx60m4tqYpf6PMluIYcBTpP7WA5PVExtCljLfUiT7zCEqb6DwE_w1uSUMA2Sz0IOyRL"
 SYMBOL = "%5ENDX"  # URL Encoded per ^NDX (Nasdaq 100)
 
 HEADERS = {
@@ -45,7 +45,8 @@ def send_discord_notification(message):
         print(f"[DISCORD] Errore invio: {e}", flush=True)
 
 def fetch_nasdaq_data():
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=7d&interval=15m"
+    # Usiamo 10d per scaricare circa 260-300 candele a 15m e garantire precisione alla EMA 200
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=10d&interval=15m"
     try:
         res = requests.get(url, headers=HEADERS, timeout=10)
         if res.status_code != 200:
@@ -73,8 +74,10 @@ def fetch_nasdaq_data():
 def check_setup():
     print("[CHECK] Avvio analisi candela...", flush=True)
     df = fetch_nasdaq_data()
-    if df is None or len(df) < 50:
-        print(f"[CHECK] Dati insufficienti ({len(df) if df is not None else 0} candele).", flush=True)
+    
+    # Verifichiamo che ci siano almeno 200 candele per la massima precisione calcolata
+    if df is None or len(df) < 200:
+        print(f"[CHECK] Dati insufficienti per EMA200 ({len(df) if df is not None else 0}/200 candele).", flush=True)
         return
 
     # Calcolo Indicatori
