@@ -9,8 +9,14 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565779847014387825/p9gdYL8v3UxNuy926BMGFY8dedrL9Dt5P6Kz7ID9GGwdCWf8jTqiNuKhfrsr3GNmnL8S"
-SYMBOL = "^NDX"  # Ticker Nasdaq 100 su Yahoo Finance
+SYMBOL = "^NDX"  # Ticker Nasdaq 100
 TIMEFRAME = "15m"
+
+# Crea sessione con User-Agent per evitare il blocco 429 di Yahoo Finance
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
 
 # --- MINI SERVER PER MANTENERE ATTIVO RENDER (PORT BINDING) ---
 class SimpleHandler(BaseHTTPRequestHandler):
@@ -18,6 +24,10 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"NAS100 Bot is running!")
+        
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 def run_http_server():
     port = int(os.environ.get("PORT", 8080))
@@ -34,51 +44,56 @@ def send_discord_notification(message):
         print(f"Errore invio Discord: {e}")
 
 def check_setup():
-    df = yf.download(tickers=SYMBOL, period="5d", interval=TIMEFRAME, progress=False)
-    
-    if df.empty or len(df) < 200:
-        return
+    try:
+        ticker = yf.Ticker(SYMBOL, session=session)
+        df = ticker.history(period="5d", interval=TIMEFRAME)
         
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+        if df.empty or len(df) < 200:
+            print("Dati insufficienti scaricati da Yahoo.")
+            return
+            
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-    # Calcolo Indicatori
-    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
+        # Calcolo Indicatori
+        df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
-    # ATR (14)
-    high_low = df['High'] - df['Low']
-    high_close = np.abs(df['High'] - df['Close'].shift())
-    low_close = np.abs(df['Low'] - df['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    df['ATR'] = true_range.rolling(14).mean()
+        # ATR (14)
+        high_low = df['High'] - df['Low']
+        high_close = np.abs(df['High'] - df['Close'].shift())
+        low_close = np.abs(df['Low'] - df['Close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = np.max(ranges, axis=1)
+        df['ATR'] = true_range.rolling(14).mean()
 
-    # Volume SMA (20)
-    df['AvgVolume'] = df['Volume'].rolling(20).mean()
+        # Volume SMA (20)
+        df['AvgVolume'] = df['Volume'].rolling(20).mean()
 
-    # Penultima candela (l'ultima appena CHIUSA)
-    candle = df.iloc[-2]
+        # Penultima candela (l'ultima appena CHIUSA)
+        candle = df.iloc[-2]
 
-    retest_ema = (candle['Low'] <= candle['EMA20']) and (candle['High'] >= candle['EMA20'])
-    clean_market = (candle['High'] - candle['Low']) <= (candle['ATR'] * 1.8)
-    low_volume = candle['Volume'] <= (candle['AvgVolume'] * 1.1)
+        retest_ema = (candle['Low'] <= candle['EMA20']) and (candle['High'] >= candle['EMA20'])
+        clean_market = (candle['High'] - candle['Low']) <= (candle['ATR'] * 1.8)
+        low_volume = candle['Volume'] <= (candle['AvgVolume'] * 1.1)
 
-    if retest_ema and clean_market and low_volume:
-        prezzo_chiusura = round(float(candle['Close']), 2)
-        ema20_val = round(float(candle['EMA20']), 2)
+        if retest_ema and clean_market and low_volume:
+            prezzo_chiusura = round(float(candle['Close']), 2)
+            ema20_val = round(float(candle['EMA20']), 2)
 
-        msg = f"🚀 **SEGNALE RE-TEST NAS100 (15M)** 🚀\n" \
-              f"• **Prezzo Chiusura:** {prezzo_chiusura}\n" \
-              f"• **EMA 20:** {ema20_val}\n" \
-              f"• **Stato:** Re-test confermato con volumi e volatilità controllati."
+            msg = f"🚀 **SEGNALE RE-TEST NAS100 (15M)** 🚀\n" \
+                  f"• **Prezzo Chiusura:** {prezzo_chiusura}\n" \
+                  f"• **EMA 20:** {ema20_val}\n" \
+                  f"• **Stato:** Re-test confermato con volumi e volatilità controllati."
 
-        send_discord_notification(msg)
+            send_discord_notification(msg)
+    except Exception as e:
+        print(f"Errore download dati: {e}")
 
-# Avvio del server HTTP in background per Render
+# Avvio server HTTP in background
 threading.Thread(target=run_http_server, daemon=True).start()
 
-# Loop continuo ogni 15 minuti
+# Invio test immediato all'avvio
 print("Bot avviato e in ascolto...")
 send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
 
@@ -86,6 +101,7 @@ while True:
     try:
         check_setup()
     except Exception as e:
-        print(f"Errore: {e}")
+        print(f"Errore loop: {e}")
         
     time.sleep(900)
+
