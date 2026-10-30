@@ -8,7 +8,7 @@ import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565779847014387825/p9gdYL8v3UxNuy926BMGFY8dedrL9Dt5P6Kz7ID9GGwdCWf8jTqiNuKhfrsr3GNMnl8S"
+DISCORD_WEBHOOK_URL ="https://discord.com/api/webhooks/1565779847014387825/p9gdYL8v3UxNuy926BMGFY8dedrL9Dt5P6Kz7ID9GGwdCWf8jTqiNuKhfrsr3GNMnl8S"
 SYMBOL = "^NDX"  # Ticker Nasdaq 100 su Yahoo Finance
 TIMEFRAME = "15m"
 
