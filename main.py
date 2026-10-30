@@ -2,23 +2,19 @@ import os
 import time
 import threading
 import requests
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565779847014387825/p9gdYL8v3UxNuy926BMGFY8dedrL9Dt5P6Kz7ID9GGwdCWf8jTqiNuKhfrsr3GNmnL8S"
-SYMBOL = "^NDX"  # Ticker Nasdaq 100
-TIMEFRAME = "15m"
+SYMBOL = "%5ENDX"  # URL Encoded per ^NDX (Nasdaq 100)
 
-# Crea sessione con User-Agent per evitare il blocco 429 di Yahoo Finance
-session = requests.Session()
-session.headers.update({
+headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-})
+}
 
-# --- MINI SERVER PER MANTENERE ATTIVO RENDER (PORT BINDING) ---
+# --- MINI SERVER PER PORT BINDING SU RENDER ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -38,22 +34,41 @@ def send_discord_notification(message):
     data = {"content": message}
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=data)
-        if response.status_code == 204:
+        if response.status_code in [200, 204]:
             print("Notifica inviata su Discord!")
+        else:
+            print(f"Discord Status Code: {response.status_code}")
     except Exception as e:
         print(f"Errore invio Discord: {e}")
 
+def fetch_nasdaq_data():
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=5d&interval=15m"
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        print(f"Errore API Yahoo Chart: Status {res.status_code}")
+        return None
+    
+    data = res.json()
+    result = data['chart']['result'][0]
+    timestamps = result['timestamp']
+    quote = result['indicators']['quote'][0]
+    
+    df = pd.DataFrame({
+        'Open': quote['open'],
+        'High': quote['high'],
+        'Low': quote['low'],
+        'Close': quote['close'],
+        'Volume': quote['volume']
+    }, index=pd.to_datetime(timestamps, unit='s'))
+    
+    return df.dropna()
+
 def check_setup():
     try:
-        ticker = yf.Ticker(SYMBOL, session=session)
-        df = ticker.history(period="5d", interval=TIMEFRAME)
-        
-        if df.empty or len(df) < 200:
-            print("Dati insufficienti scaricati da Yahoo.")
+        df = fetch_nasdaq_data()
+        if df is None or len(df) < 200:
+            print("Dati storici insufficienti.")
             return
-            
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
 
         # Calcolo Indicatori
         df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
@@ -88,12 +103,12 @@ def check_setup():
 
             send_discord_notification(msg)
     except Exception as e:
-        print(f"Errore download dati: {e}")
+        print(f"Errore durante l'elaborazione dei dati: {e}")
 
 # Avvio server HTTP in background
 threading.Thread(target=run_http_server, daemon=True).start()
 
-# Invio test immediato all'avvio
+# Test invio notifica immediata all'avvio
 print("Bot avviato e in ascolto...")
 send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
 
@@ -104,4 +119,3 @@ while True:
         print(f"Errore loop: {e}")
         
     time.sleep(900)
-
