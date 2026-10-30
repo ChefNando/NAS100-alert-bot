@@ -80,6 +80,7 @@ threading.Thread(target=run_http_server, daemon=True).start()
 
 # Loop continuo ogni 15 minuti
 print("Bot avviato e in ascolto...")
+send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
 while True:
     try:
         check_setup()
