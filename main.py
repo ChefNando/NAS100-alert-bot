@@ -1,13 +1,28 @@
+import os
 import time
+import threading
 import requests
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
 DISCORD_WEBHOOK_URL = "INSERISCI_QUI_IL_TUO_LINK_WEBHOOK_DISCORD"
 SYMBOL = "^NDX"  # Ticker Nasdaq 100 su Yahoo Finance
 TIMEFRAME = "15m"
+
+# --- MINI SERVER PER MANTENERE ATTIVO RENDER (PORT BINDING) ---
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"NAS100 Bot is running!")
+
+def run_http_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
 
 def send_discord_notification(message):
     data = {"content": message}
@@ -59,6 +74,9 @@ def check_setup():
               f"• **Stato:** Re-test confermato con volumi e volatilità controllati."
         
         send_discord_notification(msg)
+
+# Avvio del server HTTP in background per Render
+threading.Thread(target=run_http_server, daemon=True).start()
 
 # Loop continuo ogni 15 minuti
 print("Bot avviato e in ascolto...")
