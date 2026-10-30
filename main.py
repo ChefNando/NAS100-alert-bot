@@ -7,8 +7,8 @@ import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565866666317844510/RpxQaUzwiaNcrtwx1FI_21ZtJsfKgsByM8E2h7dqBLf-miheLxOCRktE1Q7VxqeSUdiw"
-SYMBOL = "%5ENDX"  # URL Encoded per ^NDX
+DISCORD_WEBHOOK_URL = "INSERISCI_QUI_IL_TUO_NUOVO_WEBHOOK_URL"
+SYMBOL = "%5ENDX"  # URL Encoded per ^NDX (Nasdaq 100)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -35,11 +35,17 @@ def send_discord_notification(message):
     try:
         res = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
         print(f"[DISCORD] Risposta server: {res.status_code}", flush=True)
+        if res.status_code == 429:
+            retry_after = res.json().get('retry_after', 5)
+            print(f"[DISCORD] Rate limit! Attendo {retry_after} secondi...", flush=True)
+            time.sleep(retry_after)
+            res_retry = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
+            print(f"[DISCORD] Risposta dopo attesa: {res_retry.status_code}", flush=True)
     except Exception as e:
         print(f"[DISCORD] Errore invio: {e}", flush=True)
 
 def fetch_nasdaq_data():
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=5d&interval=15m"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=7d&interval=15m"
     try:
         res = requests.get(url, headers=HEADERS, timeout=10)
         if res.status_code != 200:
@@ -68,7 +74,7 @@ def check_setup():
     print("[CHECK] Avvio analisi candela...", flush=True)
     df = fetch_nasdaq_data()
     if df is None or len(df) < 200:
-        print("[CHECK] Dati storici insufficienti.", flush=True)
+        print(f"[CHECK] Dati insufficienti scaricati ({len(df) if df is not None else 0} candele).", flush=True)
         return
 
     # Calcolo Indicatori
@@ -107,7 +113,7 @@ def check_setup():
         send_discord_notification(msg)
 
 def bot_loop():
-    time.sleep(2)  # Piccola pausa per stabilizzare l'avvio
+    time.sleep(5)  # Pausa di stabilizzazione per evitare rate limit all'avvio
     print("[BOT] Invio messaggio di test a Discord...", flush=True)
     send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
 
