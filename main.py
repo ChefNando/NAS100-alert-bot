@@ -7,7 +7,7 @@ import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565779847014387825/p9gdYL8v3UxNuy926BMGFY8dedrL9Dt5P6Kz7ID9GGwdCWf8jTqiNuKhfrsr3GNmnL8S"
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565866666317844510/RpxQaUzwiaNcrtwx1FI_21ZtJsfKgsByM8E2h7dqBLf-miheLxOCRktE1Q7VxqeSUdiw"
 SYMBOL = "%5ENDX"  # URL Encoded per ^NDX
 
 HEADERS = {
