@@ -8,7 +8,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- CONFIGURAZIONE ---
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1565874273644449853/_M3kU-_UBuBEmbiSWPRHHk4wdiakfEuRtDhC1xOBF47NzlNnsLxJlAzjhcqLvmMuRFi0"
-SYMBOL = "%5ENDX"  # URL Encoded per ^NDX (Nasdaq 100)
+SYMBOL = "%5ENDX"  # Nasdaq 100
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -45,7 +45,6 @@ def send_discord_notification(message):
         print(f"[DISCORD] Errore invio: {e}", flush=True)
 
 def fetch_nasdaq_data():
-    # Range 10d per garantire 250+ candele a 15m e massima accuratezza su EMA 20 e 200
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=10d&interval=15m"
     try:
         res = requests.get(url, headers=HEADERS, timeout=10)
@@ -97,27 +96,38 @@ def check_setup():
     # Penultima candela CHIUSA
     candle = df.iloc[-2]
 
-    retest_ema = (candle['Low'] <= candle['EMA20']) and (candle['High'] >= candle['EMA20'])
+    retest_ema20 = (candle['Low'] <= candle['EMA20']) and (candle['High'] >= candle['EMA20'])
     clean_market = (candle['High'] - candle['Low']) <= (candle['ATR'] * 1.8)
     low_volume = candle['Volume'] <= (candle['AvgVolume'] * 1.1)
 
-    print(f"[CHECK] Analisi completata ({len(df)} candele). Retest: {retest_ema}, Clean: {clean_market}, LowVol: {low_volume}", flush=True)
+    # Determinazione della direzione
+    direction = None
+    if retest_ema20 and clean_market and low_volume:
+        if candle['Close'] > candle['EMA200'] and candle['Close'] >= candle['EMA20']:
+            direction = "🟢 LONG"
+        elif candle['Close'] < candle['EMA200'] and candle['Close'] <= candle['EMA20']:
+            direction = "🔴 SHORT"
 
-    if retest_ema and clean_market and low_volume:
+    print(f"[CHECK] Analisi completata ({len(df)} candele). Direzione: {direction}", flush=True)
+
+    if direction:
         prezzo_chiusura = round(float(candle['Close']), 2)
         ema20_val = round(float(candle['EMA20']), 2)
+        ema200_val = round(float(candle['EMA200']), 2)
 
         msg = f"🚀 **SEGNALE RE-TEST NAS100 (15M)** 🚀\n" \
+              f"• **Direzione Consigliata:** {direction}\n" \
               f"• **Prezzo Chiusura:** {prezzo_chiusura}\n" \
               f"• **EMA 20:** {ema20_val}\n" \
-              f"• **Stato:** Re-test confermato con volumi e volatilità controllati."
+              f"• **EMA 200:** {ema200_val}\n" \
+              f"• **Nota:** Setup confermato con volumi e volatilità sotto controllo. Valuta l'ingresso."
 
         send_discord_notification(msg)
 
 def bot_loop():
     time.sleep(5)
     print("[BOT] Invio messaggio di test a Discord...", flush=True)
-    send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e collegato a Discord!")
+    send_discord_notification("✅ **TEST BOT NAS100:** Il bot è online e pronto a segnalare LONG e SHORT!")
 
     while True:
         try:
