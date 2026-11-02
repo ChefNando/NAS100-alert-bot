@@ -27,30 +27,38 @@ def start_http_server():
 # --- DISCORD & BOT LOGIC ---
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
+# Usa una Session per mantenere aperta la connessione ed evitare blocchi IP
+session = requests.Session()
+session.headers.update({
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
+
 def send_discord_message(content):
     if not DISCORD_WEBHOOK_URL:
-        print("[DISCORD ERRORE] DISCORD_WEBHOOK_URL mancante!", flush=True)
+        print("[DISCORD ERRORE] DISCORD_WEBHOOK_URL non impostato.", flush=True)
         return False
 
     print(f"[DISCORD] Invio: '{content}'...", flush=True)
-    
-    # User-Agent personalizzato per bypassare il filtro Cloudflare di Discord
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    }
     payload = {"content": content}
 
     try:
-        res = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
+        res = session.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
         
         if res.status_code in [200, 204]:
             print("[DISCORD OK] Messaggio inviato con successo su Discord!", flush=True)
             return True
+        elif res.status_code == 429:
+            # Gestione sicura del Rate Limit di Discord
+            data = res.json()
+            retry_after = data.get("retry_after", 5)
+            print(f"[DISCORD RATE LIMIT] Attendo {retry_after}s prima di riprovare...", flush=True)
+            time.sleep(retry_after)
+            return send_discord_message(content)
         else:
             print(f"[DISCORD ERRORE] Status {res.status_code}: {res.text[:100]}", flush=True)
             return False
-            
+
     except Exception as e:
         print(f"[DISCORD ERRORE EXCEPTION] {e}", flush=True)
         return False
@@ -58,7 +66,7 @@ def send_discord_message(content):
 def bot_loop():
     print("[BOT] Avvio ciclo di monitoraggio NAS100 15M...", flush=True)
     
-    # Invio alert di avvio
+    # Invio messaggio di test
     send_discord_message("🤖 **NAS100 Bot online e operativo su Render!**")
 
     while True:
