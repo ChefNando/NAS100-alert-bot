@@ -1,5 +1,6 @@
 import os
 import time
+import datetime
 import threading
 import requests
 import yfinance as yf
@@ -69,7 +70,7 @@ def calculate_poc(df_window, bins=30):
     except Exception:
         return df_window['Close'].mean()
 
-# --- STRATEGIA: ESCLUSIVAMENTE RE-TEST CHIUSURA CANDELA 15M ---
+# --- STRATEGIA: ESCLUSIVAMENTE RE-TEST SU CANDELA CHIUSA ---
 def check_nas100_retest():
     try:
         ticker = yf.Ticker("NQ=F")
@@ -85,8 +86,9 @@ def check_nas100_retest():
         # 2. Calcolo POC ultime 50 candele
         poc_price = calculate_poc(df.tail(50))
 
-        curr = df.iloc[-1]   # Candela appena chiusa
-        prev = df.iloc[-2]   # Candela precedente
+        # Escludiamo l'ultima candela se ancora in formazione (usiamo l'ultima chiusa ufficialmente)
+        curr = df.iloc[-2]   # Candela appena CHIUSA
+        prev = df.iloc[-3]   # Candela precedente a quella chiusa
 
         c_close = curr['Close']
         c_high = curr['High']
@@ -107,7 +109,7 @@ def check_nas100_retest():
                 f"• **Livello MA 20:** `{c_ma20:.2f}` (Supporto tenuto)\n"
                 f"• **Livello POC:** `{poc_price:.2f}`\n"
                 f"• **Volumi:** {vol_str}\n\n"
-                f"💡 *Conferma:* Candela chiusa con rigetto sulla MA 20 tenuto sopra il POC."
+                f"💡 *Conferma:* Candela 15M chiusa con rigetto sulla MA 20 tenuto sopra il POC."
             )
 
         # --- VERO RE-TEST SHORT (SU CANDELA CHIUSA) ---
@@ -118,7 +120,7 @@ def check_nas100_retest():
                 f"• **Livello MA 20:** `{c_ma20:.2f}` (Resistenza confermata)\n"
                 f"• **Livello POC:** `{poc_price:.2f}`\n"
                 f"• **Volumi:** {vol_str}\n\n"
-                f"💡 *Conferma:* Candela chiusa con rigetto sulla MA 20 respinto sotto il POC."
+                f"💡 *Conferma:* Candela 15M chiusa con rigetto sulla MA 20 respinto sotto il POC."
             )
 
         return None
@@ -126,28 +128,39 @@ def check_nas100_retest():
         print(f"[ANALISI ERRORE] {e}", flush=True)
         return None
 
-# --- CICLO DI CONTROLLO OGNI 15 MINUTI ---
+# --- FUNZIONE PER CALCOLARE I SECONDI MANCANTI ALLA PROSSIMA CHIUSURA CANDELA (00, 15, 30, 45) ---
+def get_seconds_until_next_15m():
+    now = datetime.datetime.now()
+    minutes_to_add = 15 - (now.minute % 15)
+    next_time = (now + datetime.timedelta(minutes=minutes_to_add)).replace(second=5, microsecond=0) # 5s di margine per ricezione dati
+    seconds_to_wait = (next_time - now).total_seconds()
+    return seconds_to_wait
+
+# --- CICLO DI CONTROLLO SINCRONIZZATO CON GLI ORARI REALI ---
 def bot_loop():
     time.sleep(2)
-    print("[BOT] Avvio monitoraggio RE-TEST ad ogni chiusura di candela (15M)...", flush=True)
-    send_discord_message("🤖 **NAS100 Bot online! Scansione impostata ad ogni chiusura candela 15M.**")
+    print("[BOT] Avvio monitoraggio RE-TEST perfettamente sincronizzato con chiusura candele 15M...", flush=True)
+    send_discord_message("🤖 **NAS100 Bot online! Analisi sincronizzata esattamente a spacco sulle chiusure 15M (:00, :15, :30, :45).**")
 
     last_signal_sent = ""
 
     while True:
         try:
+            wait_sec = get_seconds_until_next_15m()
+            print(f"[TIMING] Attesa di {int(wait_sec)}s fino alla prossima chiusura di candela...", flush=True)
+            time.sleep(wait_sec)
+
+            print("[CHECK] Candela 15M appena chiusa! Verifico Re-Test...", flush=True)
             alert_msg = check_nas100_retest()
             
             if alert_msg and alert_msg != last_signal_sent:
-                print("[BOT] Re-Test confermato a fine candela! Invio notifica...", flush=True)
+                print("[BOT] Re-Test confermato sulla candela chiusa! Invio notifica...", flush=True)
                 send_discord_message(alert_msg)
                 last_signal_sent = alert_msg
 
-            # Pausa di 15 minuti (900 secondi) per sincronizzarsi con le candele
-            time.sleep(900)
         except Exception as e:
             print(f"[ERRORE LOOP] {e}", flush=True)
-            time.sleep(15)
+            time.sleep(10)
 
 if __name__ == "__main__":
     t_server = threading.Thread(target=start_http_server, daemon=True)
