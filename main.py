@@ -70,10 +70,11 @@ def calculate_poc(df_window, bins=30):
     except Exception:
         return df_window['Close'].mean()
 
-# --- STRATEGIA RE-TEST 15M ---
+# --- STRATEGIA RE-TEST 15M (USANDO IL TICKER CASH ^NDX) ---
 def check_nas100_retest():
     try:
-        ticker = yf.Ticker("NQ=F")
+        # Usiamo ^NDX (Nasdaq 100 Index) per allineare i prezzi al grafico Cash
+        ticker = yf.Ticker("^NDX")
         df = ticker.history(period="5d", interval="15m")
 
         if df.empty or len(df) < 50:
@@ -127,11 +128,11 @@ def check_nas100_retest():
         print(f"[ANALISI ERRORE] {e}", flush=True)
         return None
 
-# --- CICLO AD ALTA AFFIDABILITÀ (CHECK ORARIO OGNI 15s) ---
+# --- CICLO CONTINUO SINCRONIZZATO ---
 def bot_loop():
     time.sleep(2)
-    print("[BOT] Avvio monitoraggio attivo NAS100 (attesa oraria 15M)...", flush=True)
-    send_discord_message("🤖 **NAS100 Bot online! Monitoraggio continuo attivo per chiusure 15M.**")
+    print("[BOT] Avvio monitoraggio attivo NAS100 Cash (^NDX) per chiusure 15M...", flush=True)
+    send_discord_message("🤖 **NAS100 Bot online! Collegato al prezzo Cash (^NDX) per allineamento eToro.**")
 
     last_checked_minute = -1
     last_signal_sent = ""
@@ -140,9 +141,9 @@ def bot_loop():
         try:
             now = datetime.datetime.now()
             
-            # Scatta SOLO ai minuti :00, :15, :30, :45 (al secondo tra 00 e 20)
+            # Scattaesattamente ai minuti :00, :15, :30, :45 (primi 20 secondi)
             if now.minute % 15 == 0 and now.minute != last_checked_minute and now.second < 20:
-                print(f"[{now.strftime('%H:%M:%S')}] Chiusura candela 15M rilevata! Eseguo analisi...", flush=True)
+                print(f"[{now.strftime('%H:%M:%S')}] Chiusura candela 15M rilevata! Analizzo grafico Cash...", flush=True)
                 last_checked_minute = now.minute
 
                 alert_msg = check_nas100_retest()
@@ -153,7 +154,6 @@ def bot_loop():
                 else:
                     print("[BOT] Nessun re-test sulla candela appena chiusa.", flush=True)
 
-            # Controllo leggero ogni 15 secondi per mantenere il processo sveglio
             time.sleep(15)
         except Exception as e:
             print(f"[ERRORE LOOP] {e}", flush=True)
