@@ -63,9 +63,8 @@ def send_discord_message(content, max_retries=3):
 
     return False
 
-# --- CALCOLO POC (POINT OF CONTROL SUI FUTURES) ---
+# --- CALCOLO POC (POINT OF CONTROL) ---
 def calculate_poc(df_window, bins=30):
-    """Calcola il livello di prezzo con il maggior volume scambiato (POC)."""
     try:
         counts, bin_edges = np.histogram(df_window['Close'], bins=bins, weights=df_window['Volume'])
         poc_index = np.argmax(counts)
@@ -74,24 +73,24 @@ def calculate_poc(df_window, bins=30):
     except Exception:
         return df_window['Close'].mean()
 
-# --- LOGICA STRATEGIA: RE-TEST EMA 20 + POC + VOLUMI ---
+# --- LOGICA STRATEGIA: NASDAQ SPOT (ETORO) ---
 def check_nas100_strategy():
     try:
-        # Usiamo NQ=F (E-mini Nasdaq Futures) per avere i volumi reali!
-        ticker = yf.Ticker("NQ=F")
+        # USA ^NDX PER AVERE I PREZZI IDENTICI AD ETORO (NSDQ100)
+        ticker = yf.Ticker("^NDX")
         df = ticker.history(period="5d", interval="15m")
 
         if df.empty or len(df) < 50:
-            print("[BOT ERRORE] Impossibile scaricare i dati dei Futures NQ=F.", flush=True)
+            print("[BOT ERRORE] Impossibile scaricare i dati ^NDX.", flush=True)
             return None
 
-        # 1. Calcolo EMA 20
+        # 1. Calcolo EMA 20 sull'indice Spot
         df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
 
-        # 2. Calcolo Media Volumi (sulle ultime 20 candele)
+        # 2. Calcolo Media Volumi
         df['Vol_SMA_20'] = df['Volume'].rolling(window=20).mean()
 
-        # 3. Calcolo POC (ultime 50 candele = circa 12 ore di contrattazione)
+        # 3. Calcolo POC
         poc_price = calculate_poc(df.tail(50))
 
         last_candle = df.iloc[-1]
@@ -102,33 +101,30 @@ def check_nas100_strategy():
         volume = last_candle['Volume']
         avg_volume = last_candle['Vol_SMA_20']
 
-        # Filtro Volumi: True se la candela corrente ha volumi superiori alla media
         high_volume = volume > avg_volume
 
-        # --- SEGNALE LONG (BULLISH RE-TEST) ---
-        # Il prezzo scende a testare la EMA 20 (low <= EMA_20), chiude sopra la EMA 20 e si trova sopra/vicino al POC
+        # --- SEGNALE LONG ---
         if low_price <= ema_20 and close_price > ema_20 and close_price >= poc_price:
-            vol_str = "🟢 **Volumi ALTI** (Sopra la media)" if high_volume else "🟡 Volumi nella media"
+            vol_str = "🟢 **Volumi ALTI**" if high_volume else "🟡 Volumi nella media"
             return (
                 f"🚀 **CONSIGLIO TRADING: ENTRATA LONG (NAS100 15M)**\n\n"
-                f"• **Prezzo Attuale:** `{close_price:.2f}`\n"
-                f"• **Re-Test EMA 20:** `{ema_20:.2f}` (Supporto tenuto)\n"
+                f"• **Prezzo eToro:** `{close_price:.2f}`\n"
+                f"• **EMA 20:** `{ema_20:.2f}` (Supporto tenuto)\n"
                 f"• **Livello POC:** `{poc_price:.2f}`\n"
                 f"• **Volumi:** {vol_str}\n\n"
-                f"💡 *Conferma:* Rigetto al ripasso sulla EMA 20 con struttura supportata dai volumi del POC."
+                f"💡 *Conferma:* Rigetto sulla EMA 20 tenuto sopra il POC."
             )
 
-        # --- SEGNALE SHORT (BEARISH RE-TEST) ---
-        # Il prezzo sale a testare la EMA 20 (high >= EMA_20), chiude sotto la EMA 20 e si trova sotto/vicino al POC
+        # --- SEGNALE SHORT ---
         if high_price >= ema_20 and close_price < ema_20 and close_price <= poc_price:
-            vol_str = "🔴 **Volumi ALTI** (Sopra la media)" if high_volume else "🟡 Volumi nella media"
+            vol_str = "🔴 **Volumi ALTI**" if high_volume else "🟡 Volumi nella media"
             return (
                 f"🔻 **CONSIGLIO TRADING: ENTRATA SHORT (NAS100 15M)**\n\n"
-                f"• **Prezzo Attuale:** `{close_price:.2f}`\n"
-                f"• **Re-Test EMA 20:** `{ema_20:.2f}` (Resistenza confermata)\n"
+                f"• **Prezzo eToro:** `{close_price:.2f}`\n"
+                f"• **EMA 20:** `{ema_20:.2f}` (Resistenza confermata)\n"
                 f"• **Livello POC:** `{poc_price:.2f}`\n"
                 f"• **Volumi:** {vol_str}\n\n"
-                f"💡 *Conferma:* Rigetto al rialzo sulla EMA 20 con pressione di vendita sotto il POC."
+                f"💡 *Conferma:* Rigetto sulla EMA 20 respinto sotto il POC."
             )
 
         return None
@@ -136,32 +132,30 @@ def check_nas100_strategy():
         print(f"[ANALISI ERRORE] {e}", flush=True)
         return None
 
-# --- CICLO PRINCIPALE ---
+# --- CICLO PRINCIPALE AD ALTA FREQUENZA (60 SECONDI) ---
 def bot_loop():
     time.sleep(2)
-    print("[BOT] Avvio monitoraggio automatico Futures NAS100 (NQ=F)...", flush=True)
+    print("[BOT] Avvio monitoraggio in tempo reale Nasdaq (eToro)...", flush=True)
     
-    send_discord_message("🤖 **NAS100 Bot online! Analisi automatica EMA 20 + POC + Volumi (Futures) attiva.**")
+    send_discord_message("🤖 **NAS100 Bot online! Allineato ai prezzi eToro con scansione veloce (60s).**")
 
     last_signal_sent = ""
 
     while True:
         try:
-            print("[CHECK] Analisi candela 15M in corso...", flush=True)
+            print("[CHECK] Scansione candela 15M in corso...", flush=True)
             alert_msg = check_nas100_strategy()
             
             if alert_msg and alert_msg != last_signal_sent:
-                print("[BOT] Segnale confermato! Invio su Discord via Make...", flush=True)
+                print("[BOT] Segnale tempestivo trovato! Inoltro a Discord...", flush=True)
                 send_discord_message(alert_msg)
                 last_signal_sent = alert_msg
-            else:
-                print("[CHECK] Nessuna conferma di re-test sulla candela attuale.", flush=True)
 
-            # Controlla ad ogni chiusura di candela 15M (900 secondi = 15 minuti)
-            time.sleep(900)
+            # Controlla ogni minuto invece di attendere 15 minuti!
+            time.sleep(60)
         except Exception as e:
             print(f"[ERRORE LOOP] {e}", flush=True)
-            time.sleep(15)
+            time.sleep(10)
 
 if __name__ == "__main__":
     t_server = threading.Thread(target=start_http_server, daemon=True)
