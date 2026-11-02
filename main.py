@@ -69,24 +69,23 @@ def calculate_poc(df_window, bins=30):
     except Exception:
         return df_window['Close'].mean()
 
-# --- STRATEGIA: ESCLUSIVAMENTE RE-TEST EMA 20 + POC ---
+# --- STRATEGIA: ESCLUSIVAMENTE RE-TEST CHIUSURA CANDELA 15M ---
 def check_nas100_retest():
     try:
-        # Usa NQ=F per avere i dati in tempo reale spacco al secondo
         ticker = yf.Ticker("NQ=F")
         df = ticker.history(period="5d", interval="15m")
 
         if df.empty or len(df) < 50:
             return None
 
-        # 1. Calcolo MA 20 (Semplice, uguale ad eToro)
+        # 1. Calcolo MA 20 Semplice
         df['MA_20'] = df['Close'].rolling(window=20).mean()
         df['Vol_SMA_20'] = df['Volume'].rolling(window=20).mean()
 
         # 2. Calcolo POC ultime 50 candele
         poc_price = calculate_poc(df.tail(50))
 
-        curr = df.iloc[-1]   # Candela attuale
+        curr = df.iloc[-1]   # Candela appena chiusa
         prev = df.iloc[-2]   # Candela precedente
 
         c_close = curr['Close']
@@ -100,30 +99,26 @@ def check_nas100_retest():
         high_volume = curr['Volume'] > curr['Vol_SMA_20']
         vol_str = "🟢 **Volumi ALTI**" if high_volume else "🟡 Volumi nella media"
 
-        # --- VERO RE-TEST LONG ---
-        # Condizione: La candela precedente era SOPRA la MA 20.
-        # La candela attuale scende a toccare la MA 20 (c_low <= c_ma20), ma chiude SOPRA la MA 20 e SOPRA il POC.
+        # --- VERO RE-TEST LONG (SU CANDELA CHIUSA) ---
         if p_close > p_ma20 and c_low <= c_ma20 and c_close > c_ma20 and c_close >= poc_price:
             return (
-                f"🚀 **CONSIGLIO TRADING: RE-TEST LONG CONFERMATO (NAS100 15M)**\n\n"
-                f"• **Prezzo Attuale:** `{c_close:.2f}`\n"
-                f"• **Livello MA 20:** `{c_ma20:.2f}` (Supporto testato con successo)\n"
+                f"🚀 **CONSIGLIO TRADING: RE-TEST LONG CONFERMATO (CHIUSURA 15M)**\n\n"
+                f"• **Prezzo Chiusura:** `{c_close:.2f}`\n"
+                f"• **Livello MA 20:** `{c_ma20:.2f}` (Supporto tenuto)\n"
                 f"• **Livello POC:** `{poc_price:.2f}`\n"
                 f"• **Volumi:** {vol_str}\n\n"
-                f"💡 *Conferma:* Il prezzo è sceso a testare la MA 20 ed è stato respinto al rialzo sopra il POC."
+                f"💡 *Conferma:* Candela chiusa con rigetto sulla MA 20 tenuto sopra il POC."
             )
 
-        # --- VERO RE-TEST SHORT ---
-        # Condizione: La candela precedente era SOTTO la MA 20.
-        # La candela attuale sale a toccare la MA 20 (c_high >= c_ma20), ma chiude SOTTO la MA 20 e SOTTO il POC.
+        # --- VERO RE-TEST SHORT (SU CANDELA CHIUSA) ---
         if p_close < p_ma20 and c_high >= c_ma20 and c_close < c_ma20 and c_close <= poc_price:
             return (
-                f"🔻 **CONSIGLIO TRADING: RE-TEST SHORT CONFERMATO (NAS100 15M)**\n\n"
-                f"• **Prezzo Attuale:** `{c_close:.2f}`\n"
-                f"• **Livello MA 20:** `{c_ma20:.2f}` (Resistenza testata con successo)\n"
+                f"🔻 **CONSIGLIO TRADING: RE-TEST SHORT CONFERMATO (CHIUSURA 15M)**\n\n"
+                f"• **Prezzo Chiusura:** `{c_close:.2f}`\n"
+                f"• **Livello MA 20:** `{c_ma20:.2f}` (Resistenza confermata)\n"
                 f"• **Livello POC:** `{poc_price:.2f}`\n"
                 f"• **Volumi:** {vol_str}\n\n"
-                f"💡 *Conferma:* Il prezzo è salito a testare la MA 20 ed è stato respinto al ribasso sotto il POC."
+                f"💡 *Conferma:* Candela chiusa con rigetto sulla MA 20 respinto sotto il POC."
             )
 
         return None
@@ -131,11 +126,11 @@ def check_nas100_retest():
         print(f"[ANALISI ERRORE] {e}", flush=True)
         return None
 
-# --- CICLO DI CONTROLLO OGNI 60 SECONDI ---
+# --- CICLO DI CONTROLLO OGNI 15 MINUTI ---
 def bot_loop():
     time.sleep(2)
-    print("[BOT] Avvio monitoraggio RE-TEST NAS100...", flush=True)
-    send_discord_message("🤖 **NAS100 Bot online! Filtro Re-Test preciso (MA 20 + POC) attivo.**")
+    print("[BOT] Avvio monitoraggio RE-TEST ad ogni chiusura di candela (15M)...", flush=True)
+    send_discord_message("🤖 **NAS100 Bot online! Scansione impostata ad ogni chiusura candela 15M.**")
 
     last_signal_sent = ""
 
@@ -144,14 +139,15 @@ def bot_loop():
             alert_msg = check_nas100_retest()
             
             if alert_msg and alert_msg != last_signal_sent:
-                print("[BOT] Vero Re-Test trovato! Invio notifica...", flush=True)
+                print("[BOT] Re-Test confermato a fine candela! Invio notifica...", flush=True)
                 send_discord_message(alert_msg)
                 last_signal_sent = alert_msg
 
-            time.sleep(60)
+            # Pausa di 15 minuti (900 secondi) per sincronizzarsi con le candele
+            time.sleep(900)
         except Exception as e:
             print(f"[ERRORE LOOP] {e}", flush=True)
-            time.sleep(10)
+            time.sleep(15)
 
 if __name__ == "__main__":
     t_server = threading.Thread(target=start_http_server, daemon=True)
