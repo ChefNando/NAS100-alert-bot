@@ -14,7 +14,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
-        self.wfile.write(b"NAS100 Bot is running!")
+        self.wfile.write(b"NAS100 Bot Active!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -70,7 +70,7 @@ def calculate_poc(df_window, bins=30):
     except Exception:
         return df_window['Close'].mean()
 
-# --- STRATEGIA: ESCLUSIVAMENTE RE-TEST SU CANDELA CHIUSA ---
+# --- STRATEGIA RE-TEST 15M ---
 def check_nas100_retest():
     try:
         ticker = yf.Ticker("NQ=F")
@@ -83,12 +83,11 @@ def check_nas100_retest():
         df['MA_20'] = df['Close'].rolling(window=20).mean()
         df['Vol_SMA_20'] = df['Volume'].rolling(window=20).mean()
 
-        # 2. Calcolo POC ultime 50 candele
+        # 2. Calcolo POC
         poc_price = calculate_poc(df.tail(50))
 
-        # Escludiamo l'ultima candela se ancora in formazione (usiamo l'ultima chiusa ufficialmente)
         curr = df.iloc[-2]   # Candela appena CHIUSA
-        prev = df.iloc[-3]   # Candela precedente a quella chiusa
+        prev = df.iloc[-3]   # Candela precedente
 
         c_close = curr['Close']
         c_high = curr['High']
@@ -101,7 +100,7 @@ def check_nas100_retest():
         high_volume = curr['Volume'] > curr['Vol_SMA_20']
         vol_str = "🟢 **Volumi ALTI**" if high_volume else "🟡 Volumi nella media"
 
-        # --- VERO RE-TEST LONG (SU CANDELA CHIUSA) ---
+        # --- VERO RE-TEST LONG ---
         if p_close > p_ma20 and c_low <= c_ma20 and c_close > c_ma20 and c_close >= poc_price:
             return (
                 f"🚀 **CONSIGLIO TRADING: RE-TEST LONG CONFERMATO (CHIUSURA 15M)**\n\n"
@@ -112,7 +111,7 @@ def check_nas100_retest():
                 f"💡 *Conferma:* Candela 15M chiusa con rigetto sulla MA 20 tenuto sopra il POC."
             )
 
-        # --- VERO RE-TEST SHORT (SU CANDELA CHIUSA) ---
+        # --- VERO RE-TEST SHORT ---
         if p_close < p_ma20 and c_high >= c_ma20 and c_close < c_ma20 and c_close <= poc_price:
             return (
                 f"🔻 **CONSIGLIO TRADING: RE-TEST SHORT CONFERMATO (CHIUSURA 15M)**\n\n"
@@ -128,36 +127,34 @@ def check_nas100_retest():
         print(f"[ANALISI ERRORE] {e}", flush=True)
         return None
 
-# --- FUNZIONE PER CALCOLARE I SECONDI MANCANTI ALLA PROSSIMA CHIUSURA CANDELA (00, 15, 30, 45) ---
-def get_seconds_until_next_15m():
-    now = datetime.datetime.now()
-    minutes_to_add = 15 - (now.minute % 15)
-    next_time = (now + datetime.timedelta(minutes=minutes_to_add)).replace(second=5, microsecond=0) # 5s di margine per ricezione dati
-    seconds_to_wait = (next_time - now).total_seconds()
-    return seconds_to_wait
-
-# --- CICLO DI CONTROLLO SINCRONIZZATO CON GLI ORARI REALI ---
+# --- CICLO AD ALTA AFFIDABILITÀ (CHECK ORARIO OGNI 15s) ---
 def bot_loop():
     time.sleep(2)
-    print("[BOT] Avvio monitoraggio RE-TEST perfettamente sincronizzato con chiusura candele 15M...", flush=True)
-    send_discord_message("🤖 **NAS100 Bot online! Analisi sincronizzata esattamente a spacco sulle chiusure 15M (:00, :15, :30, :45).**")
+    print("[BOT] Avvio monitoraggio attivo NAS100 (attesa oraria 15M)...", flush=True)
+    send_discord_message("🤖 **NAS100 Bot online! Monitoraggio continuo attivo per chiusure 15M.**")
 
+    last_checked_minute = -1
     last_signal_sent = ""
 
     while True:
         try:
-            wait_sec = get_seconds_until_next_15m()
-            print(f"[TIMING] Attesa di {int(wait_sec)}s fino alla prossima chiusura di candela...", flush=True)
-            time.sleep(wait_sec)
-
-            print("[CHECK] Candela 15M appena chiusa! Verifico Re-Test...", flush=True)
-            alert_msg = check_nas100_retest()
+            now = datetime.datetime.now()
             
-            if alert_msg and alert_msg != last_signal_sent:
-                print("[BOT] Re-Test confermato sulla candela chiusa! Invio notifica...", flush=True)
-                send_discord_message(alert_msg)
-                last_signal_sent = alert_msg
+            # Scatta SOLO ai minuti :00, :15, :30, :45 (al secondo tra 00 e 20)
+            if now.minute % 15 == 0 and now.minute != last_checked_minute and now.second < 20:
+                print(f"[{now.strftime('%H:%M:%S')}] Chiusura candela 15M rilevata! Eseguo analisi...", flush=True)
+                last_checked_minute = now.minute
 
+                alert_msg = check_nas100_retest()
+                if alert_msg and alert_msg != last_signal_sent:
+                    print("[BOT] Re-Test confermato! Invio notifica...", flush=True)
+                    send_discord_message(alert_msg)
+                    last_signal_sent = alert_msg
+                else:
+                    print("[BOT] Nessun re-test sulla candela appena chiusa.", flush=True)
+
+            # Controllo leggero ogni 15 secondi per mantenere il processo sveglio
+            time.sleep(15)
         except Exception as e:
             print(f"[ERRORE LOOP] {e}", flush=True)
             time.sleep(10)
