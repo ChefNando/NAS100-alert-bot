@@ -49,14 +49,9 @@ def send_discord_message(content):
             print("[DISCORD OK] Messaggio inviato con successo!", flush=True)
             return True
         elif res.status_code == 429:
-            retry_after = 5
-            try:
-                retry_after = res.json().get("retry_after", 5)
-            except Exception:
-                pass
-            print(f"[DISCORD RATE LIMIT] Attendo {retry_after}s...", flush=True)
-            time.sleep(retry_after)
-            return send_discord_message(content)
+            print("[DISCORD RATE LIMIT] Raggiunto limite richieste. Attendo 10s prima di proseguire...", flush=True)
+            time.sleep(10)
+            return False
         else:
             print(f"[DISCORD ERRORE] Status {res.status_code}: {res.text[:100]}", flush=True)
             return False
@@ -82,9 +77,9 @@ def bot_loop():
             time.sleep(10)
 
 if __name__ == "__main__":
-    # 1. Avvia immediatamente il server HTTP su un thread daemon per sbloccare Render
+    # 1. Avvia il server HTTP per soddisfare le verifiche di Render
     t_server = threading.Thread(target=start_http_server, daemon=True)
     t_server.start()
 
-    # 2. Esegue il ciclo principale del bot
+    # 2. Avvia il ciclo del bot
     bot_loop()
