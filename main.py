@@ -17,7 +17,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, format, *args):
-        return  # Silenzia i log continui di Render
+        return
 
 def start_http_server():
     port = int(os.environ.get("PORT", 10000))
@@ -33,39 +33,40 @@ session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 
-def send_discord_message(content):
+def send_discord_message(content, max_retries=3):
     if not DISCORD_WEBHOOK_URL:
-        print("[DISCORD ERRORE] DISCORD_WEBHOOK_URL non trovato nelle Environment Variables.", flush=True)
+        print("[DISCORD ERRORE] DISCORD_WEBHOOK_URL non trovato.", flush=True)
         return False
 
-    print(f"[DISCORD] Invio: '{content}'...", flush=True)
     payload = {"content": content}
 
-    try:
-        res = session.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        
-        # 200 (OK) e 204 (No Content) indicano successo
-        if res.status_code in [200, 204]:
-            print("[DISCORD OK] Messaggio inviato con successo!", flush=True)
-            return True
-        elif res.status_code == 429:
-            print("[DISCORD RATE LIMIT] Raggiunto limite richieste. Attendo 10s prima di proseguire...", flush=True)
-            time.sleep(10)
-            return False
-        else:
-            print(f"[DISCORD ERRORE] Status {res.status_code}: {res.text[:100]}", flush=True)
-            return False
+    for attempt in range(1, max_retries + 1):
+        print(f"[DISCORD] Tentativo {attempt}/{max_retries} invio: '{content}'...", flush=True)
+        try:
+            res = session.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
 
-    except Exception as e:
-        print(f"[DISCORD ERRORE EXCEPTION] {e}", flush=True)
-        return False
+            if res.status_code in [200, 204]:
+                print("[DISCORD OK] Messaggio inviato con successo!", flush=True)
+                return True
+            elif res.status_code == 429:
+                wait_time = 15 * attempt
+                print(f"[DISCORD RATE LIMIT] IP in cooldown. Attendo {wait_time}s prima del riprovare...", flush=True)
+                time.sleep(wait_time)
+            else:
+                print(f"[DISCORD ERRORE] Status {res.status_code}: {res.text[:100]}", flush=True)
+                break
+        except Exception as e:
+            print(f"[DISCORD ERRORE EXCEPTION] {e}", flush=True)
+            break
+
+    return False
 
 # --- CICLO DEL BOT ---
 def bot_loop():
     time.sleep(2)
     print("[BOT] Avvio ciclo di monitoraggio NAS100 15M...", flush=True)
-    
-    # Notifica iniziale di avvio
+
+    # Invia messaggio di benvenuto ritentando in caso di rate limit temporaneo
     send_discord_message("🤖 **NAS100 Bot online e operativo su Render!**")
 
     while True:
@@ -77,9 +78,7 @@ def bot_loop():
             time.sleep(10)
 
 if __name__ == "__main__":
-    # 1. Avvia il server HTTP per soddisfare le verifiche di Render
     t_server = threading.Thread(target=start_http_server, daemon=True)
     t_server.start()
 
-    # 2. Avvia il ciclo del bot
     bot_loop()
